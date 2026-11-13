@@ -7,6 +7,14 @@ Windows 宿主编译补丁，以及让触控可用的 THP 守护 shim。
 
 [English](README.md) · 简体中文
 
+> **声明 · Declaration**
+> 本项目由 **AI 辅助开发**，所有功能结论均经 **人工真机测试**。AI 输出可能有误，刷机风险自负，
+> 使用前请自行阅读并复核。完整说明见 [DISCLAIMER.md](DISCLAIMER.md)。
+>
+> Developed with **AI assistance**; every functional claim verified by **human testing on the
+> real device**. AI output may contain mistakes, and flashing is at your own risk — read and
+> verify before use. Full text: [DISCLAIMER.md](DISCLAIMER.md)。
+
 ## 当前状态
 
 已在真机（OS3.0.307.0.WNKCNXM）验证：
@@ -19,35 +27,38 @@ Windows 宿主编译补丁，以及让触控可用的 THP 守护 shim。
 尚未完成：WLAN、MTP 开关、系统 OTA 自愈、第二系统（Skyward 支持该功能，但 vermeer
 目前没有对应的系统包）。
 
-## 目录结构
+## 刷机前必读
 
-| 路径 | 说明 |
-|---|---|
-| `devices/vermeer.toml` | 设备配置：显示、触控节点、服务、WLAN、owners |
-| `patches/0001-windows-host-build.patch` | Windows 宿主编译补丁：ramdisk 代码的 `cfg(unix)`、POSIX 绝对路径判定、`skyward-pack --extra` |
-| `src/thpstart.c` | shim：`dlopen("/odm/lib64/libtouchreport.so")` 并调用 `thp_daemon_main` |
-| `scripts/build.sh` | 编译 skyward + system-init，并打包 recovery 镜像 |
-| `scripts/make-extra.sh` | 用 NDK 编译 `thpstart` 到 `--extra` 覆盖层 |
-| `notes/` | 真机取证、构建记录、触控问题调查 |
+- 只写 recovery 分区，boot、vbmeta、userdata 都不动；回滚只需一次
+  `fastboot flash recovery_ab`——但要保留**你当前版本**的原厂镜像。
+- Skyward 备份的「boot」组包含 7 个分区（boot、init_boot、vendor_boot、dtbo、vbmeta、
+  vbmeta_system、**recovery**）；恢复该组会连 recovery 一起还原。
+- vermeer 的 goodix 驱动工作在 **THP（Touch Hardware Path）模式**，触摸报文先进入
+  `/dev/xiaomi-touch`，由 `touchfeature` HAL 的 `touch-report` 线程回注 input。recovery
+  没有 framework 客户端，不跑 `thpstart` 时屏幕只响应硬件按键。
+- `/odm/firmware/{glove,film,water}_model.tflite` 缺失，THP 的手套/贴膜/防水识别会报错，
+  不影响触控。
+- `/metadata` 默认只读，修改 `settings.json` 里的亮度需要先
+  `mount -o rw,remount /metadata`。
 
-## 上游仓库
+## 刷入与回滚
 
-本仓库是**设备移植**，不是 Skyward 的分支：Skyward 本体在
-[kirklin/skyward](https://github.com/kirklin/skyward)（GPL-3.0-or-later）。
+```bash
+adb reboot bootloader
+fastboot flash recovery_ab out/skyward-vermeer.img
+fastboot reboot recovery
 
-上游简介：Skyward 是一个用 Rust 从零编写的 recovery，做法是**基于手机原厂 recovery 镜像重建**——
-保留原厂内核与分区布局，运行时通过 binder 调用原厂服务（keymint、gatekeeper、wpa_supplicant、
-boot control 等），每台设备用一份 `devices/<codename>.toml` 描述。它从官方 OTA 包按需取出
-recovery 分区并校验 SHA-256，支持解密 data、安装 A/B 全量 OTA/zip/分区镜像、在线下载官方 OTA、
-更新后自愈写回 recovery、备份恢复、文件管理、终端、WLAN、MTP、adb、fastbootd、双系统等。
+# 回滚原厂
+fastboot flash recovery_ab out/stock-recovery.img
+fastboot reboot
+```
 
-上游目前已适配 `nezha`（小米 17 Ultra）与 `ishtar`（小米 13 Ultra），另有 19 台在建；
-本仓库补上 `vermeer`（Redmi K70）的配置、Windows 宿主编译补丁与 THP 触控 shim。
+`recovery_ab` 会同时写入两个槽位。
 
 ## 构建
 
 依赖：Rust（stable）、`rustup target add aarch64-linux-android`、`cargo-ndk`、
-Android NDK r29、`lz4`（用于检查镜像）。
+Android NDK r29、`lz4`。
 
 ```bash
 git clone https://github.com/kirklin/skyward.git repos/skyward
@@ -64,35 +75,31 @@ export STOCK=./out/stock-recovery.img
 `skyward-pack recovery` 会生成一个 100 MiB 的 boot 镜像：原厂 recovery 的 ramdisk，
 加上 `skyward/`、`system/bin/recovery` 以及 `--extra` 覆盖层。
 
-## 刷入与回滚
+## 目录结构
 
-```bash
-adb reboot bootloader
-fastboot flash recovery_ab out/skyward-vermeer.img
-fastboot reboot recovery
+| 路径 | 说明 |
+|---|---|
+| `devices/vermeer.toml` | 设备配置：显示、触控节点、服务、WLAN、owners |
+| `patches/0001-windows-host-build.patch` | ramdisk 代码的 `cfg(unix)`、POSIX 绝对路径判定、`skyward-pack --extra` |
+| `src/thpstart.c` | shim：`dlopen("/odm/lib64/libtouchreport.so")` 并调用 `thp_daemon_main` |
+| `scripts/build.sh` | 编译 skyward + system-init，并打包 recovery 镜像 |
+| `scripts/make-extra.sh` | 用 NDK 编译 `thpstart` 到 `--extra` 覆盖层 |
+| `notes/` | 真机取证、构建记录、触控问题调查 |
+| `DISCLAIMER.md` | AI 辅助与人工真机测试声明（中英双语） |
 
-# 回滚原厂
-fastboot flash recovery_ab out/stock-recovery.img
-fastboot reboot
-```
+## 上游仓库
 
-`recovery_ab` 会同时写入两个槽位；除 recovery 分区外不改动任何分区。
+本仓库是**设备移植**，不是 Skyward 的分支：Skyward 本体在
+[kirklin/skyward](https://github.com/kirklin/skyward)（GPL-3.0-or-later）。
 
-## 注意事项
+上游简介：Skyward 是一个用 Rust 从零编写的 recovery，做法是**基于手机原厂 recovery 镜像重建**——
+保留原厂内核与分区布局，运行时通过 binder 调用原厂服务（keymint、gatekeeper、wpa_supplicant、
+boot control 等），每台设备用一份 `devices/<codename>.toml` 描述。它从官方 OTA 包按需取出
+recovery 分区并校验 SHA-256，支持解密 data、安装 A/B 全量 OTA/zip/分区镜像、在线下载官方 OTA、
+更新后自愈写回 recovery、备份恢复、文件管理、终端、WLAN、MTP、adb、fastbootd、双系统等。
 
-- vermeer 的 goodix 驱动工作在 **THP（Touch Hardware Path）模式**：触摸报文先进入
-  `/dev/xiaomi-touch`，由 `touchfeature` HAL 里的 `touch-report` 线程回注 input；recovery
-  没有 framework 客户端，因此不跑守护时触控完全无事件，只有硬件按键可用。
-  `thpstart` 在本进程内调用 `thp_daemon_main`，随后驱动恢复在 `/dev/input/event7` 上报触控。
-- vermeer 上没有 `/odm/bin/touch_report`、`/odm/bin/touchsensor`，配置里不要添加这两个服务，
-  否则服务链中断会导致 keymint 等后续服务全部起不来（表现为解密失败）。
-- `/odm/firmware/{glove,film,water}_model.tflite` 缺失，THP 的手套/贴膜/防水识别会报错，
-  不影响触控。
-- `/metadata` 默认只读，修改 `settings.json` 里的亮度需要先
-  `mount -o rw,remount /metadata`。
-- 备份的「boot」组包含 7 个分区：boot、init_boot、vendor_boot、dtbo、vbmeta、
-  vbmeta_system、recovery；恢复 boot 组会连同 recovery 一起还原（备份时刷的是哪个版本，
-  恢复后就是哪个版本）。
+上游目前已适配 `nezha`（小米 17 Ultra）与 `ishtar`（小米 13 Ultra），另有 19 台在建；
+本仓库补上 `vermeer`（Redmi K70）的配置、Windows 宿主编译补丁与 THP 触控 shim。
 
 ## 许可
 
