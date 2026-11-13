@@ -6,6 +6,8 @@ goodix driver runs in THP mode.
 
 This repository holds **source only** — no recovery images, no release artifacts.
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 ## Status
 
 Working on a real device (OS3.0.307.0.WNKCNXM):
