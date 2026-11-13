@@ -1,0 +1,180 @@
+diff --git a/crates/skyward-bootimg/src/ramdisk.rs b/crates/skyward-bootimg/src/ramdisk.rs
+index a266fa3..196622b 100644
+--- a/crates/skyward-bootimg/src/ramdisk.rs
++++ b/crates/skyward-bootimg/src/ramdisk.rs
+@@ -1,9 +1,12 @@
+ use anyhow::{bail, Context, Result};
+ use cpio::{NewcBuilder, NewcReader};
++#[cfg(unix)]
+ use std::ffi::{CString, OsStr};
+ use std::fs;
+ use std::io::{Cursor, Read, Write};
++#[cfg(unix)]
+ use std::os::unix::ffi::OsStrExt;
++#[cfg(unix)]
+ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+ use std::path::Path;
+ use std::process::{Command, Stdio};
+@@ -122,6 +125,7 @@ impl Ramdisk {
+     /// everything in it is in. Where a file is already there, the entry is
+     /// made anew, where the kernel writes over it, so that a program
+     /// running from that file is left alone.
++    #[cfg(unix)]
+     pub fn unpack(&self, root: &Path) -> Result<()> {
+         for e in &self.entries {
+             let path = root.join(&e.name);
+@@ -192,11 +196,13 @@ fn root_entry(name: &str, mode: u32, data: Vec<u8>) -> Entry {
+     Entry { name: name.to_string(), mode, uid: 0, gid: 0, mtime: 0, nlink, dev: (0, 0), rdev: (0, 0), data }
+ }
+ 
++#[cfg(unix)]
+ fn c_path(path: &Path) -> Result<CString> {
+     CString::new(path.as_os_str().as_bytes()).context("a NUL in the path")
+ }
+ 
+ /// One entry of [`Ramdisk::unpack`] at `path`.
++#[cfg(unix)]
+ fn unpack(e: &Entry, path: &Path) -> Result<()> {
+     let kind = e.mode & S_IFMT;
+     let mode = e.mode & 0o7777;
+@@ -243,6 +249,7 @@ fn unpack(e: &Entry, path: &Path) -> Result<()> {
+ 
+ /// Give `path` itself, a link or not, `mtime` as the time it was last
+ /// changed and read.
++#[cfg(unix)]
+ fn set_time(path: &Path, mtime: u32) -> Result<()> {
+     let at = libc::timespec { tv_sec: mtime as libc::time_t, tv_nsec: 0 };
+     let times = [at, at];
+@@ -454,3 +461,10 @@ mod tests {
+         assert!(back.find("system/bin/ziptool").is_some(), "what it pointed to stays");
+     }
+ }
++#[cfg(not(unix))]
++impl Ramdisk {
++    /// On hosts without Unix metadata there is nothing to give an entry.
++    pub fn unpack(&self, _root: &Path) -> Result<()> {
++        bail!("unpacking a ramdisk onto the filesystem needs a Unix host")
++    }
++}
+diff --git a/crates/skyward-config/src/lib.rs b/crates/skyward-config/src/lib.rs
+index 441ee4e..ee156f7 100644
+--- a/crates/skyward-config/src/lib.rs
++++ b/crates/skyward-config/src/lib.rs
+@@ -493,6 +493,20 @@ pub fn codename(text: &str) -> Result<String> {
+     Ok(named.device.codename)
+ }
+ 
++/// Whether `path` starts at the root. Windows does not call a path that
++/// starts with '/' absolute, and every path the phone's config names does.
++fn rooted(path: &Path) -> bool {
++    path.is_absolute() || path.to_string_lossy().starts_with('/')
++}
++
++/// Whether `path` is made of plain names, without `.` or `..` in it.
++fn plain(path: &Path) -> bool {
++    path.to_string_lossy()
++        .split('/')
++        .filter(|s| !s.is_empty())
++        .all(|s| s != "." && s != ".." && !s.contains('\\'))
++}
++
+ impl DeviceConfig {
+     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+         let p = path.as_ref();
+@@ -505,9 +519,8 @@ impl DeviceConfig {
+         let cfg: DeviceConfig = toml::from_str(text).context("parse device config")?;
+         for log in &cfg.wipe.logs {
+             let path = Path::new(log);
+-            let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+             ensure!(
+-                path.is_absolute() && plain && path.starts_with(DATA) && path != Path::new(DATA),
++                rooted(path) && plain(path) && path.to_string_lossy().starts_with(DATA) && path != Path::new(DATA),
+                 "[wipe] logs: {log} is not a folder inside {DATA}"
+             );
+         }
+@@ -545,7 +558,7 @@ impl DeviceConfig {
+         }
+         if let Some(haptics) = &cfg.haptics {
+             let file = &haptics.resonance;
+-            ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
++            ensure!(rooted(Path::new(file)), "[haptics] resonance: {file} is not an absolute path");
+             let Strength { lightest, strongest } = haptics.strength;
+             ensure!(
+                 0.0 < lightest && lightest < strongest && strongest <= 1.0,
+@@ -555,8 +568,7 @@ impl DeviceConfig {
+         if let Some(logd) = &cfg.logd {
+             for library in &logd.libraries {
+                 let path = Path::new(library);
+-                let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
++                ensure!(rooted(path) && plain(path) && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
+             }
+         }
+         for owners in &cfg.owners {
+@@ -567,8 +579,7 @@ impl DeviceConfig {
+             ensure!(!owners.paths.is_empty(), "[[owners]] for {}:{} names no file", owners.user, owners.group);
+             for file in &owners.paths {
+                 let path = Path::new(file);
+-                let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
++                ensure!(rooted(path) && plain(path) && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
+             }
+         }
+         if let Some(stock) = &cfg.stock {
+@@ -601,7 +612,7 @@ impl DeviceConfig {
+                         );
+                         ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
+                     }
+-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
++                    None => ensure!(rooted(path), "[wlan] firmware: {} is not an absolute path", file.path),
+                 }
+             }
+         }
+diff --git a/crates/skyward-pack/src/main.rs b/crates/skyward-pack/src/main.rs
+index f76770d..a6382fe 100644
+--- a/crates/skyward-pack/src/main.rs
++++ b/crates/skyward-pack/src/main.rs
+@@ -69,6 +69,9 @@ enum Cmd {
+         mono_license: PathBuf,
+         #[arg(long)]
+         out: PathBuf,
++        /// Extra files, laid out as they are to appear in the ramdisk.
++        #[arg(long)]
++        extra: Option<PathBuf>,
+     },
+     /// Print the stock build a device's recovery is made on, as lines of
+     /// name=value: its version, where its full update package is, and the
+@@ -105,7 +108,7 @@ fn main() -> Result<()> {
+             img.kernel = BootImage::read(&kernel)?.kernel;
+             write(&out, &img, &img.to_bytes()?)
+         }
+-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
++        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out, extra } => {
+             let size = partition_size(&stock)?;
+             let mut img = BootImage::read(&stock)?;
+             let mut rd = Ramdisk::decode(&img.ramdisk)?;
+@@ -117,6 +120,24 @@ fn main() -> Result<()> {
+             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
+             skyward_config::DeviceConfig::load(&config)?;
+             rd.replace(paths::RECOVERY, read(&binary)?)?;
++            if let Some(dir) = &extra {
++                fn walk(root: &std::path::Path, dir: &std::path::Path, rd: &mut Ramdisk) -> anyhow::Result<()> {
++                    for e in std::fs::read_dir(dir)? {
++                        let e = e?;
++                        let path = e.path();
++                        if path.is_dir() {
++                            walk(root, &path, rd)?;
++                            continue;
++                        }
++                        let rel = path.strip_prefix(root)?;
++                        let name = rel.to_string_lossy().replace('\\', "/");
++                        let mode = if name.ends_with(".so") || name.ends_with(".txt") || name.ends_with(".ini") { 0o644 } else { 0o755 };
++                        rd.add(&name, mode, std::fs::read(&path)?)?;
++                    }
++                    Ok(())
++                }
++                walk(dir, dir, &mut rd)?;
++            }
+             // Install scripts look for the commands a stock recovery lacks
+             // among its programs, and its unzip there too, a link to ziptool
+             // until it points here; the recovery binary is each of them.

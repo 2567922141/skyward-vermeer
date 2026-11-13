@@ -1,0 +1,162 @@
+[device]
+codename = "vermeer"
+brand = "Redmi"
+model = "Redmi K70"
+ab = true
+soc = { hans = "第二代骁龙®8移动平台", hant = "Snapdragon® 8 Gen 2 行動平台", en = "Snapdragon® 8 Gen 2 Mobile Platform" }
+os_version_prop = "ro.mi.os.version.incremental"
+
+[display]
+# The panel's own mode: 1440 by 3200 (persist.sys.miui_resolution=1440,3200,560);
+# the stock system runs it at 560 dpi, which is also what wm density reports.
+width = 1440
+height = 3200
+density = 560
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor"]
+# The touchscreen is Goodix's Berlin series controller: goodix_core.ko in
+# /vendor/lib/modules, loaded under Xiaomi's touch feature layer,
+# xiaomi_touch.ko, which is what /dev/xiaomi-touch belongs to. Both are
+# loaded on the running system, in that order (lsmod: xiaomi_touch uses
+# goodix_core); the stock recovery's own modules.load lists them as well.
+load = ["goodix_core", "xiaomi_touch"]
+
+# What the phone's own init hands the touch layer as it boots; a recovery
+# runs none of init's boot actions, and the programs that open these nodes
+# run as the system user. The fod/gesture nodes of the 13 series do not
+# exist here; these are the ones the running system has.
+# The nodes Xiaomi's touch feature layer opens on this phone; the stock
+# init hands them to the system user as these modes.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o660
+paths = [
+    "/dev/xiaomi-touch",
+    "/sys/class/touch/touch_dev/fod_press_status",
+]
+
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o660
+paths = [
+    "/dev/xiaomi-touch",
+    "/sys/class/touch/touch_dev/enable_touch_raw",
+    "/sys/class/touch/touch_dev/touch_finger_status",
+]
+
+[[owners]]
+user = "root"
+group = "root"
+mode = 0o660
+paths = ["/sys/class/touch/touch_dev/resolution_factor"]
+
+# What the phone's own init runs once the system has finished starting, as
+# kernel-post-boot in /vendor/etc/init/hw/init.qti.kernel.rc: the kernel
+# starts the CPU clusters on the performance governor, and this hands them
+# to WALT and lets idle CPUs power down. Without it the CPUs stay at their
+# highest clock and the phone heats up while idle.
+[[service]]
+path = "/vendor/bin/sh"
+args = ["/vendor/bin/init.kernel.post_boot.sh"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+oneshot = true
+user = "root"
+groups = ["root", "system", "wakelock", "graphics"]
+
+
+# The panel hands raw frames to these Xiaomi programs: touchfeature serves
+# the touch feature HAL, touch_report turns the frames into touches, and
+# touchsensor tells water, gloves and screen protectors apart.
+# The secure world reaches back into Android through the listeners this
+# daemon registers; without them the key service cannot use any key.
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# The key service: the only program that can use the keys the phone wrapped
+# in hardware. It reaches the TEE through the QSEECom listener above.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+user = "system"
+groups = ["system", "drmrpc"]
+
+# The older hardware services (the gatekeeper below) register with this
+# manager, which a recovery carries none of: the installed system's own
+# program runs against the installed system's own libraries.
+[[service]]
+path = "/mnt/system_ext/bin/hwservicemanager"
+libraries = ["/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/mnt/system_ext/lib64"]
+ready_property = "hwservicemanager.ready"
+user = "system"
+groups = ["system", "readproc"]
+
+# The credential service: what the secure world has check a screen lock, and
+# the only thing that can hand out the note the key service wants before it
+# uses a key a screen lock guards.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.gatekeeper@1.0-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.gatekeeper@1.0::IGatekeeper/default"
+user = "system"
+groups = ["system"]
+
+# The boot control, which says which slot the bootloader starts next and
+# switches it, writing where the bootloader reads it.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot@1.2-service"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.boot@1.2::IBootControl/default"
+user = "root"
+groups = ["root"]
+
+# WLAN: the kiwi node in the device tree, driven by qca_cld3_kiwi_v2. Its
+# recovery covers the vendor partition's firmware folder with the modem's,
+# so the settings and the MAC address are given to the loader again; the
+# address is the one /mnt/vendor/persist/kiwi_v2/wlan_mac.bin holds.
+# THP touch daemon: vermeer's goodix driver runs in Touch Hardware Path mode,
+# so the panel's frames never reach evdev until this daemon turns them into
+# touches (libtouchreport's thp_daemon_main runs in a thread).
+[[service]]
+path = "/system/bin/thpstart"
+libraries = ["/odm/lib64", "/system/lib64"]
+user = "root"
+groups = ["root", "system", "input", "uhid"]
+
+[[owners]]
+user = "root"
+group = "root"
+mode = 0o660
+paths = ["/dev/uinput"]
+
+[wlan]
+modules = ["qca_cld3_kiwi_v2"]
+writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
+firmware = [
+    { name = "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini" },
+    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", partition = "persist", path = "kiwi_v2/wlan_mac.bin" },
+]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/vendor/lib64", "/system/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+# The update server the stock updater of the Chinese system asks.
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"
+
+# qcom-hv-haptics, as on the other SM8550 Xiaomi phones: the driver plays
+# the click it keeps as waveform 0 and says the motor's resonant frequency
+# in lra_frequency_hz.
+[haptics]
+click = 0
+resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
+strength = { lightest = 0.5, strongest = 1.0 }
