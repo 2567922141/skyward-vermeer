@@ -1,5 +1,9 @@
 # Declaration / 声明
 
+> [!CAUTION]
+> **本仓库由 AI 辅助开发，所有功能结论均经人工真机测试。**
+> **AI-assisted development; every functional claim verified by a human on a real device.**
+
 [English](#english) · [简体中文](#中文)
 
 ## 中文

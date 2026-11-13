@@ -5,15 +5,21 @@ Windows 宿主编译补丁，以及让触控可用的 THP 守护 shim。
 
 本仓库**只存放源码**，不包含任何恢复镜像或发行产物。
 
+![AI assisted](https://img.shields.io/badge/development-AI--assisted-orange)
+![Tested on device](https://img.shields.io/badge/tested-human%20on%20real%20device-brightgreen)
+![Device](https://img.shields.io/badge/device-Redmi%20K70%20%28vermeer%29-blue)
+
 [English](README.md) · 简体中文
 
-> **声明 · Declaration**
-> 本项目由 **AI 辅助开发**，所有功能结论均经 **人工真机测试**。AI 输出可能有误，刷机风险自负，
-> 使用前请自行阅读并复核。完整说明见 [DISCLAIMER.md](DISCLAIMER.md)。
+> [!WARNING]
+> ### ⚠️ 声明 · Declaration
 >
-> Developed with **AI assistance**; every functional claim verified by **human testing on the
-> real device**. AI output may contain mistakes, and flashing is at your own risk — read and
-> verify before use. Full text: [DISCLAIMER.md](DISCLAIMER.md)。
+> **本项目由 AI 辅助开发，所有功能结论均经人工真机测试。**
+> **This project is developed with AI assistance, and every functional claim in it was
+> verified by a human on a real device.**
+>
+> AI 输出仍可能有误，刷机有风险，使用前请自行阅读并复核。
+> 完整说明见 / Full text: **[DISCLAIMER.md](DISCLAIMER.md)**
 
 ## 当前状态
 

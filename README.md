@@ -6,14 +6,21 @@ THP mode.
 
 Source only — no recovery images, no release artifacts.
 
+![AI assisted](https://img.shields.io/badge/development-AI--assisted-orange)
+![Tested on device](https://img.shields.io/badge/tested-human%20on%20real%20device-brightgreen)
+![Device](https://img.shields.io/badge/device-Redmi%20K70%20%28vermeer%29-blue)
+
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-> **Declaration · 声明**
-> Developed with **AI assistance**; every functional claim verified by **human testing on the
-> real device**. AI output may contain mistakes, and flashing is at your own risk — read and
-> verify before use. Full text: [DISCLAIMER.md](DISCLAIMER.md)
+> [!WARNING]
+> ### ⚠️ Declaration · 声明
 >
-> 由 **AI 辅助开发**，所有功能结论均经 **人工真机测试**。AI 输出可能有误，刷机风险自负，使用前请自行复核。完整说明见 [DISCLAIMER.md](DISCLAIMER.md)。
+> **This project is developed with AI assistance, and every functional claim in it was
+> verified by a human on a real device.**
+> **本项目由 AI 辅助开发，所有功能结论均经人工真机测试。**
+>
+> AI output may still contain mistakes, and flashing carries risk — read and verify before use.
+> 完整说明见 / Full text: **[DISCLAIMER.md](DISCLAIMER.md)**
 
 ## Status
 
