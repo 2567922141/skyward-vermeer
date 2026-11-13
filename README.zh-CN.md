@@ -5,6 +5,9 @@ Windows 宿主编译补丁，以及让触控可用的 THP 守护 shim。
 
 本仓库**只存放源码**，不包含任何恢复镜像或发行产物。
 
+基于 [kirklin/skyward](https://github.com/kirklin/skyward)（GPL-3.0-or-later）的移植：
+本仓库只包含 `vermeer` 适配内容。
+
 ![AI assisted](https://img.shields.io/badge/development-AI--assisted-orange)
 ![Tested on device](https://img.shields.io/badge/tested-human%20on%20real%20device-brightgreen)
 ![Device](https://img.shields.io/badge/device-Redmi%20K70%20%28vermeer%29-blue)
@@ -106,6 +109,8 @@ recovery 分区并校验 SHA-256，支持解密 data、安装 A/B 全量 OTA/zip
 
 上游目前已适配 `nezha`（小米 17 Ultra）与 `ishtar`（小米 13 Ultra），另有 19 台在建；
 本仓库补上 `vermeer`（Redmi K70）的配置、Windows 宿主编译补丁与 THP 触控 shim。
+
+上游仓库地址：**https://github.com/kirklin/skyward**
 
 ## 许可
 

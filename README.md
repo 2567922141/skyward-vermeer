@@ -6,6 +6,9 @@ THP mode.
 
 Source only — no recovery images, no release artifacts.
 
+Based on [kirklin/skyward](https://github.com/kirklin/skyward) (GPL-3.0-or-later):
+this repository only contains the `vermeer` port.
+
 ![AI assisted](https://img.shields.io/badge/development-AI--assisted-orange)
 ![Tested on device](https://img.shields.io/badge/tested-human%20on%20real%20device-brightgreen)
 ![Device](https://img.shields.io/badge/device-Redmi%20K70%20%28vermeer%29-blue)
@@ -110,6 +113,8 @@ file manager, terminal, WLAN, MTP, adb, fastbootd and a second system beside the
 Upstream supports `nezha` (Xiaomi 17 Ultra) and `ishtar` (Xiaomi 13 Ultra), with 19 more devices
 in progress. This repository contributes the `vermeer` (Redmi K70) configuration, the Windows
 host-build patches and the THP touch shim.
+
+Upstream repository: **https://github.com/kirklin/skyward**
 
 ## License
 
