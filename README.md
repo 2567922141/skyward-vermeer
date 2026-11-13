@@ -32,6 +32,24 @@ but no package exists for vermeer).
 | `scripts/make-extra.sh` | compile `thpstart` into the `--extra` overlay |
 | `notes/` | device facts, build record, touch investigation |
 
+## Upstream
+
+This repository is a **device port**, not a fork of Skyward: the project itself lives at
+[kirklin/skyward](https://github.com/kirklin/skyward) (GPL-3.0-or-later).
+
+Upstream in short: Skyward is a recovery written from scratch in Rust that rebuilds on top of
+the phone's **stock recovery image** — it keeps the vendor kernel and partition layout, drives
+the stock services over binder (keymint, gatekeeper, wpa_supplicant, boot control, ...), and
+describes each device in a `devices/<codename>.toml`. It can pull the recovery partition out of
+an official OTA package and verify its SHA-256. Features include data decryption, installing
+A/B full OTAs / zips / partition images, downloading official OTAs, writing itself back after an
+update, backup and restore, a file manager, terminal, WLAN, MTP, adb, fastbootd and a second
+system beside the installed one.
+
+Upstream currently supports `nezha` (Xiaomi 17 Ultra) and `ishtar` (Xiaomi 13 Ultra), with 19
+more devices in progress. This repository contributes the `vermeer` (Redmi K70) configuration,
+the Windows host-build patches and the THP touch shim.
+
 ## Build
 
 Prerequisites: Rust (stable), `rustup target add aarch64-linux-android`, `cargo-ndk`,

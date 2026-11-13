@@ -30,6 +30,20 @@ Windows 宿主编译补丁，以及让触控可用的 THP 守护 shim。
 | `scripts/make-extra.sh` | 用 NDK 编译 `thpstart` 到 `--extra` 覆盖层 |
 | `notes/` | 真机取证、构建记录、触控问题调查 |
 
+## 上游仓库
+
+本仓库是**设备移植**，不是 Skyward 的分支：Skyward 本体在
+[kirklin/skyward](https://github.com/kirklin/skyward)（GPL-3.0-or-later）。
+
+上游简介：Skyward 是一个用 Rust 从零编写的 recovery，做法是**基于手机原厂 recovery 镜像重建**——
+保留原厂内核与分区布局，运行时通过 binder 调用原厂服务（keymint、gatekeeper、wpa_supplicant、
+boot control 等），每台设备用一份 `devices/<codename>.toml` 描述。它从官方 OTA 包按需取出
+recovery 分区并校验 SHA-256，支持解密 data、安装 A/B 全量 OTA/zip/分区镜像、在线下载官方 OTA、
+更新后自愈写回 recovery、备份恢复、文件管理、终端、WLAN、MTP、adb、fastbootd、双系统等。
+
+上游目前已适配 `nezha`（小米 17 Ultra）与 `ishtar`（小米 13 Ultra），另有 19 台在建；
+本仓库补上 `vermeer`（Redmi K70）的配置、Windows 宿主编译补丁与 THP 触控 shim。
+
 ## 构建
 
 依赖：Rust（stable）、`rustup target add aarch64-linux-android`、`cargo-ndk`、
