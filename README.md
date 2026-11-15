@@ -40,7 +40,7 @@ Verified by hand on a real device (OS3.0.307.0.WNKCNXM):
 | Backup (`boot` group = boot/init_boot/vendor_boot/dtbo/vbmeta/vbmeta_system/recovery; 7 lz4 files whose sha256 match `backup.toml`) | ✅ |
 | Restore (the same 7 partitions written back, sha256 unchanged; `recovery_b` untouched) | ✅ |
 | Roll back to stock recovery and flash back (no data loss) | ✅ |
-| WLAN; since 0.0.7 the password is kept in `/metadata/skyward/wifi/`, and since 0.0.9 a saved network connects and gets an address on boot (measured: wlan0 came up with 192.168.0.111 after a reboot, no password prompt) | ✅ |
+| WLAN; the password is kept in `/metadata/skyward/wifi/`; since 0.0.10 a saved network connects, gets an address and reads as joined on boot (confirmed by the user: wlan0 came up with 192.168.0.111 after a reboot, no password prompt) | ✅ |
 | Online update (finds the prerelease, downloads through a mirror, writes the recovery slots, version changes after reboot) | ✅ |
 
 Not tested — at your own risk: formatting `/data`, clearing caches, `adb sideload`, A/B slot
