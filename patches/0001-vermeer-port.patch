@@ -1,0 +1,616 @@
+diff --git a/crates/skyward-block/src/erase.rs b/crates/skyward-block/src/erase.rs
+index 208bd13..f64c164 100644
+--- a/crates/skyward-block/src/erase.rs
++++ b/crates/skyward-block/src/erase.rs
+@@ -150,10 +150,18 @@ fn layout(extras: &[String]) -> Result<Option<String>> {
+ }
+ 
+ /// The size of the kernel's memory pages.
++#[cfg(unix)]
+ fn page_size() -> u64 {
+     unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 }
+ }
+ 
++/// The page a Windows host reads as it writes a partition; it erases no
++/// block device, so the page only has to be a page.
++#[cfg(not(unix))]
++fn page_size() -> u64 {
++    4096
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+diff --git a/crates/skyward-block/src/mount.rs b/crates/skyward-block/src/mount.rs
+index 0f7f6ac..d7b7400 100644
+--- a/crates/skyward-block/src/mount.rs
++++ b/crates/skyward-block/src/mount.rs
+@@ -1,5 +1,6 @@
+ use std::ffi::CString;
+ use std::io;
++#[cfg(unix)]
+ use std::os::unix::ffi::OsStrExt;
+ use std::path::Path;
+ 
+@@ -63,6 +64,7 @@ pub struct Space {
+ }
+ 
+ /// The room in the filesystem that holds `path`.
++#[cfg(unix)]
+ pub fn space(path: &Path) -> io::Result<Space> {
+     let s = statvfs(path)?;
+     // The counts are 32 bits on some hosts and 64 on the phone.
+@@ -71,7 +73,15 @@ pub fn space(path: &Path) -> io::Result<Space> {
+     Ok(Space { total: blocks * size, free: free * size, available: available * size })
+ }
+ 
++/// The room in the filesystem that holds `path`, on hosts that have none to
++/// report: a Windows host builds images, it does not fill a phone.
++#[cfg(not(unix))]
++pub fn space(_path: &Path) -> io::Result<Space> {
++    Err(io::Error::new(io::ErrorKind::Unsupported, "filesystem space needs a Unix host"))
++}
++
+ /// What the kernel says of the filesystem that holds `path`.
++#[cfg(unix)]
+ fn statvfs(path: &Path) -> io::Result<libc::statvfs> {
+     let c = CString::new(path.as_os_str().as_bytes()).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+diff --git a/crates/skyward-bootimg/src/ramdisk.rs b/crates/skyward-bootimg/src/ramdisk.rs
+index a266fa3..e619f8d 100644
+--- a/crates/skyward-bootimg/src/ramdisk.rs
++++ b/crates/skyward-bootimg/src/ramdisk.rs
+@@ -3,7 +3,9 @@ use cpio::{NewcBuilder, NewcReader};
+ use std::ffi::{CString, OsStr};
+ use std::fs;
+ use std::io::{Cursor, Read, Write};
++#[cfg(unix)]
+ use std::os::unix::ffi::OsStrExt;
++#[cfg(unix)]
+ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+ use std::path::Path;
+ use std::process::{Command, Stdio};
+@@ -115,13 +117,21 @@ impl Ramdisk {
+         self.entries.iter().find(|e| e.name == name)
+     }
+ 
+-    /// Unpack the archive over `root`, as the kernel unpacks each archive of
++    /// Unpacking onto a filesystem needs a Unix host, where a recovery is
++    /// built; on any other host the image is made without it.
++    #[cfg(not(unix))]
++    pub fn unpack(&self, _root: &Path) -> Result<()> {
++        anyhow::bail!("unpacking a ramdisk onto the filesystem needs a Unix host")
++    }
++
++/// Unpack the archive over `root`, as the kernel unpacks each archive of
+     /// an initramfs over those before it: an entry takes the place of what
+     /// is there of another kind, a folder already there stays, and each
+     /// entry gets the archive's owner, mode and time, a folder's time once
+     /// everything in it is in. Where a file is already there, the entry is
+     /// made anew, where the kernel writes over it, so that a program
+     /// running from that file is left alone.
++    #[cfg(unix)]
+     pub fn unpack(&self, root: &Path) -> Result<()> {
+         for e in &self.entries {
+             let path = root.join(&e.name);
+@@ -192,11 +202,13 @@ fn root_entry(name: &str, mode: u32, data: Vec<u8>) -> Entry {
+     Entry { name: name.to_string(), mode, uid: 0, gid: 0, mtime: 0, nlink, dev: (0, 0), rdev: (0, 0), data }
+ }
+ 
++#[cfg(unix)]
+ fn c_path(path: &Path) -> Result<CString> {
+     CString::new(path.as_os_str().as_bytes()).context("a NUL in the path")
+ }
+ 
+ /// One entry of [`Ramdisk::unpack`] at `path`.
++#[cfg(unix)]
+ fn unpack(e: &Entry, path: &Path) -> Result<()> {
+     let kind = e.mode & S_IFMT;
+     let mode = e.mode & 0o7777;
+@@ -243,6 +255,7 @@ fn unpack(e: &Entry, path: &Path) -> Result<()> {
+ 
+ /// Give `path` itself, a link or not, `mtime` as the time it was last
+ /// changed and read.
++#[cfg(unix)]
+ fn set_time(path: &Path, mtime: u32) -> Result<()> {
+     let at = libc::timespec { tv_sec: mtime as libc::time_t, tv_nsec: 0 };
+     let times = [at, at];
+diff --git a/crates/skyward-config/src/lib.rs b/crates/skyward-config/src/lib.rs
+index 873967f..0f9c69e 100644
+--- a/crates/skyward-config/src/lib.rs
++++ b/crates/skyward-config/src/lib.rs
+@@ -41,6 +41,13 @@ pub mod ramdisk {
+     }
+ }
+ 
++/// Whether `path` names a place from the top of a filesystem, as the
++/// phone's paths do: `/sys/...`, which a Windows host does not call
++/// absolute.
++fn rooted(path: &Path) -> bool {
++    path.is_absolute() || path.to_string_lossy().starts_with('/')
++}
++
+ #[derive(Debug, Clone, Deserialize)]
+ pub struct DeviceConfig {
+     pub device: Device,
+@@ -502,7 +509,7 @@ impl DeviceConfig {
+             let path = Path::new(log);
+             let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+             ensure!(
+-                path.is_absolute() && plain && path.starts_with(DATA) && path != Path::new(DATA),
++                rooted(path) && plain && path.starts_with(DATA) && path != Path::new(DATA),
+                 "[wipe] logs: {log} is not a folder inside {DATA}"
+             );
+         }
+@@ -540,7 +547,7 @@ impl DeviceConfig {
+         }
+         if let Some(haptics) = &cfg.haptics {
+             let file = &haptics.resonance;
+-            ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
++            ensure!(rooted(Path::new(file)), "[haptics] resonance: {file} is not an absolute path");
+             let Strength { lightest, strongest } = haptics.strength;
+             ensure!(
+                 0.0 < lightest && lightest < strongest && strongest <= 1.0,
+@@ -551,7 +558,7 @@ impl DeviceConfig {
+             for library in &logd.libraries {
+                 let path = Path::new(library);
+                 let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
++                ensure!(rooted(path) && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
+             }
+         }
+         for owners in &cfg.owners {
+@@ -563,7 +570,7 @@ impl DeviceConfig {
+             for file in &owners.paths {
+                 let path = Path::new(file);
+                 let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
++                ensure!(rooted(path) && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
+             }
+         }
+         if let Some(stock) = &cfg.stock {
+@@ -596,7 +603,7 @@ impl DeviceConfig {
+                         );
+                         ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
+                     }
+-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
++                    None => ensure!(rooted(&path), "[wlan] firmware: {} is not an absolute path", file.path),
+                 }
+             }
+         }
+diff --git a/crates/skyward-net/src/github.rs b/crates/skyward-net/src/github.rs
+index ff45a89..6e51271 100644
+--- a/crates/skyward-net/src/github.rs
++++ b/crates/skyward-net/src/github.rs
+@@ -4,8 +4,19 @@
+ use anyhow::{bail, ensure, Context, Result};
+ use serde::Deserialize;
+ 
+-/// Where GitHub answers which release of Skyward is the newest.
+-pub const LATEST: &str = "https://api.github.com/repos/kirklin/skyward/releases/latest";
++/// Where GitHub answers which release of Skyward is the newest. The list
++/// is read rather than `releases/latest`, which leaves prereleases out:
++/// this port publishes its builds as prereleases.
++pub const LATEST: &str = "https://api.github.com/repos/2567922141/skyward-vermeer/releases?per_page=30";
++
++/// Addresses that hand GitHub's files out on networks that reach it
++/// slowly, each in front of the address itself.
++pub const MIRRORS: &[&str] = &["https://gh-proxy.com/"];
++
++/// Where the newest build is named without GitHub's API, which refuses
++/// answers once an address has asked it enough times, and which mirrors
++/// hand out as a file.
++pub const LATEST_TXT: &str = "https://raw.githubusercontent.com/2567922141/skyward-vermeer/master/latest.txt";
+ 
+ /// The version of GitHub's API the answer is read as.
+ const API_VERSION: &str = "2022-11-28";
+@@ -42,13 +53,18 @@ impl Build {
+     /// short-lived address, where GitHub's API gave one, then the release's
+     /// link on github.com, which some networks do not reach.
+     pub fn sources(&self, located: Option<String>) -> Vec<String> {
+-        located.into_iter().chain([self.link.clone()]).collect()
++        let mut sources: Vec<String> = MIRRORS.iter().map(|m| format!("{m}{}", self.link)).collect();
++        sources.push(self.link.clone());
++        sources.extend(located);
++        sources
+     }
+ }
+ 
+ #[derive(Deserialize)]
+ struct Release {
+     tag_name: String,
++    #[serde(default)]
++    draft: bool,
+     assets: Vec<Asset>,
+ }
+ 
+@@ -73,15 +89,24 @@ struct Message {
+ /// of, and its zip for the phone `codename` names, as the build of version
+ /// `running` sees it.
+ pub fn newest(answer: &str, codename: &str, running: &str) -> Result<Newest> {
+-    let release: Release = serde_json::from_str(answer).context("read GitHub's answer")?;
+-    let tag = release.tag_name;
+-    let version = tag.strip_prefix('v').with_context(|| format!("the newest release is tagged {tag}, which is not v and a version"))?;
+-    let newest = semver::Version::parse(version).with_context(|| format!("the newest release is tagged {tag}"))?;
++    let releases: Vec<Release> = serde_json::from_str(answer).context("read GitHub's answer")?;
+     let this = semver::Version::parse(running).with_context(|| format!("this build's version is {running}"))?;
+-    // Each zip is named skyward-, the tag, the phone's codename, and the
+-    // stock build the image is made on.
+-    let start = format!("skyward-{tag}-{codename}-");
+-    let build = match release.assets.into_iter().find(|a| a.name.starts_with(&start) && a.name.ends_with(".zip")) {
++    let mut newest: Option<(semver::Version, String, Vec<Asset>)> = None;
++    for release in releases.into_iter().filter(|r| !r.draft) {
++        let version = release.tag_name.strip_prefix('v').unwrap_or(release.tag_name.as_str()).to_string();
++        let Ok(named) = semver::Version::parse(&version) else { continue };
++        if newest.as_ref().map_or(true, |(have, _, _)| named > *have) {
++            newest = Some((named, version, release.assets));
++        }
++    }
++    let Some((newest, version, assets)) = newest else { bail!("GitHub names no release of Skyward") };
++    // Each zip is named for the build it carries: Skyward, the upstream
++    // version, the phone's codename and this port's own version, such as
++    // Skyward0.3.1-vermeer-beta0.0.1.zip.
++    let named_for = format!("-{codename}-");
++    let build = match assets.into_iter().find(|a| {
++        a.name.to_ascii_lowercase().starts_with("skyward") && a.name.contains(&named_for) && a.name.ends_with(".zip")
++    }) {
+         None => None,
+         Some(a) => {
+             let sha256 = a.digest.as_deref().and_then(|d| d.strip_prefix("sha256:")).with_context(|| format!("GitHub gives no SHA-256 of {}", a.name))?;
+@@ -89,21 +114,89 @@ pub fn newest(answer: &str, codename: &str, running: &str) -> Result<Newest> {
+             Some(Build { sha256: sha256.to_lowercase(), name: a.name, url: a.url, link: a.browser_download_url, size: a.size })
+         }
+     };
+-    Ok(Newest { version: version.to_string(), newer: newest > this, build })
++    Ok(Newest { version, newer: newest > this, build })
+ }
+ 
+ /// Ask GitHub for Skyward's newest release, and its zip for the phone
+ /// `codename` names, as the build of version `running`.
+ pub fn ask(agent: &ureq::Agent, codename: &str, running: &str) -> Result<Newest> {
++    let mut first: Option<anyhow::Error> = None;
++    for url in MIRRORS.iter().map(|m| format!("{m}{LATEST}")).chain(std::iter::once(LATEST.to_string())) {
++        match ask_from(agent, &url, codename, running) {
++            Ok(newest) => return Ok(newest),
++            Err(e) => {
++                if first.is_none() {
++                    first = Some(e);
++                }
++            }
++        }
++    }
++    for url in MIRRORS.iter().map(|m| format!("{m}{LATEST_TXT}")).chain(std::iter::once(LATEST_TXT.to_string())) {
++        match ask_txt(agent, &url, codename, running) {
++            Ok(newest) => return Ok(newest),
++            Err(e) => {
++                if first.is_none() {
++                    first = Some(e);
++                }
++            }
++        }
++    }
++    Err(first.expect("an address at least"))
++}
++
++/// Read the newest build from the file this port writes for it, so that
++/// updates keep working once GitHub's API stops answering.
++fn ask_txt(agent: &ureq::Agent, url: &str, codename: &str, running: &str) -> Result<Newest> {
++    let mut response = agent
++        .get(url)
++        .header("User-Agent", format!("Skyward/{running}"))
++        .call()
++        .with_context(|| format!("ask {url}"))?;
++    let status = response.status();
++    let body = response.body_mut().read_to_string().with_context(|| format!("read the answer of {url}"))?;
++    if !status.is_success() {
++        bail!(refusal(status, &body));
++    }
++    let mut version = String::new();
++    let mut name = String::new();
++    let mut sha256 = String::new();
++    let mut size = 0_u64;
++    let mut link = String::new();
++    for line in body.lines().map(str::trim).filter(|l| !l.is_empty()) {
++        let Some((key, value)) = line.split_once('=') else { continue };
++        match key {
++            "version" => version = value.to_string(),
++            "name" => name = value.to_string(),
++            "sha256" => sha256 = value.to_string(),
++            "size" => size = value.parse().unwrap_or(0),
++            "link" => link = value.to_string(),
++            _ => {}
++        }
++    }
++    ensure!(!name.contains(&format!("-{codename}-")) == false, "{url} names no build for {codename}");
++    ensure!(name.ends_with(".zip"), "{url} names {name}, which is no zip");
++    ensure!(sha256.len() == 64 && sha256.bytes().all(|b| b.is_ascii_hexdigit()), "{url} gives no SHA-256 of {name}");
++    ensure!(link.starts_with("https://github.com/"), "{url} gives {link}, which is no release link");
++    let this = semver::Version::parse(running).with_context(|| format!("this build's version is {running}"))?;
++    let newest = semver::Version::parse(version.strip_prefix('v').unwrap_or(&version)).with_context(|| format!("{url} gives {version} as a version"))?;
++    Ok(Newest {
++        version,
++        newer: newest > this,
++        build: Some(Build { name, url: link.clone(), link, size, sha256: sha256.to_lowercase() }),
++    })
++}
++
++/// Ask one address for Skyward's newest release.
++fn ask_from(agent: &ureq::Agent, url: &str, codename: &str, running: &str) -> Result<Newest> {
+     let mut response = agent
+-        .get(LATEST)
++        .get(url)
+         .header("Accept", "application/vnd.github+json")
+         .header("X-GitHub-Api-Version", API_VERSION)
+         .header("User-Agent", format!("Skyward/{running}"))
+         .call()
+-        .with_context(|| format!("ask {LATEST}"))?;
++        .with_context(|| format!("ask {url}"))?;
+     let status = response.status();
+-    let body = response.body_mut().read_to_string().with_context(|| format!("read the answer of {LATEST}"))?;
++    let body = response.body_mut().read_to_string().with_context(|| format!("read the answer of {url}"))?;
+     if !status.is_success() {
+         bail!(refusal(status, &body));
+     }
+diff --git a/crates/skyward-pack/Cargo.toml b/crates/skyward-pack/Cargo.toml
+index cc4f55a..9630afa 100644
+--- a/crates/skyward-pack/Cargo.toml
++++ b/crates/skyward-pack/Cargo.toml
+@@ -20,7 +20,7 @@ rust-fs-erofs = "0.6.0"
+ sha2 = "0.10.9"
+ skyward-bootimg = { path = "../skyward-bootimg" }
+ skyward-config = { path = "../skyward-config" }
+-skyward-programs = { path = "../skyward-programs" }
++skyward-programs = { path = "../skyward-programs", optional = true }
+ tempfile = "3.27.0"
+ # Takes the stock recovery partition out of a full update package on its
+ # server, reading only what that partition takes, and reads the other
+@@ -29,3 +29,10 @@ unpayload = { version = "0.1.2", default-features = false, features = ["http"] }
+ 
+ [dev-dependencies]
+ serde_json = "1.0.145"
++
++[features]
++# Taking the stock recovery and the programs out of the vendor's own
++# update package, which reads the phone's partitions: the stock and
++# described subcommands. Not needed to build a recovery from an image.
++default = []
++stock = ["dep:skyward-programs"]
+diff --git a/crates/skyward-pack/src/main.rs b/crates/skyward-pack/src/main.rs
+index a4b9a90..0a4e34f 100644
+--- a/crates/skyward-pack/src/main.rs
++++ b/crates/skyward-pack/src/main.rs
+@@ -7,6 +7,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
+ use std::path::{Path, PathBuf};
+ 
+ mod avb;
++#[cfg(feature = "stock")]
+ mod described;
+ 
+ use skyward_bootimg::{BootImage, Ramdisk};
+@@ -68,6 +69,11 @@ enum Cmd {
+         /// The monospaced typeface's licence, which goes with it.
+         #[arg(long)]
+         mono_license: PathBuf,
++        /// Extra files to lay into the ramdisk: a folder whose tree is
++        /// copied in under the same paths, as `system/bin/thpstart` and
++        /// the libraries it needs.
++        #[arg(long)]
++        extra: Option<PathBuf>,
+         #[arg(long)]
+         out: PathBuf,
+     },
+@@ -77,6 +83,7 @@ enum Cmd {
+     /// to write it, also take that partition out of the package on its
+     /// server, reading only what the partition takes, and write it there
+     /// once its SHA-256 is that one.
++    #[cfg(feature = "stock")]
+     Stock {
+         /// The device configuration, devices/<codename>.toml.
+         #[arg(long)]
+@@ -92,6 +99,7 @@ enum Cmd {
+     /// under `out` as the partition and then the path in it. Only the
+     /// parts of the package that hold these files are downloaded, each
+     /// checked against the package's own sum of it.
++    #[cfg(feature = "stock")]
+     Described {
+         /// The device configuration, devices/<codename>.toml.
+         #[arg(long)]
+@@ -125,7 +133,7 @@ fn main() -> Result<()> {
+             img.kernel = BootImage::read(&kernel)?.kernel;
+             write(&out, &img, &img.to_bytes()?)
+         }
+-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
++        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, extra, out } => {
+             let size = partition_size(&stock)?;
+             let mut img = BootImage::read(&stock)?;
+             let mut rd = Ramdisk::decode(&img.ramdisk)?;
+@@ -155,6 +163,9 @@ fn main() -> Result<()> {
+                 rd.add(paths::TASK_PROFILES, 0o644, TASK_PROFILES.to_vec())?;
+             }
+             rd.add(paths::MTP_RC, 0o644, MTP_RC.to_vec())?;
++            if let Some(extra) = &extra {
++                add_extra(&mut rd, extra)?;
++            }
+             // On an unlocked device adbd keeps root when ro.secure is 0 and
+             // lets any computer in without authorization when ro.adb.secure is
+             // 0; init lets a later line of a property file override an earlier
+@@ -172,6 +183,7 @@ fn main() -> Result<()> {
+             let bytes = img.to_bytes()?;
+             write(&out, &img, &avb::footed(&bytes, "recovery", size, &Sha256::digest(&bytes))?)
+         }
++        #[cfg(feature = "stock")]
+         Cmd::Stock { config, out } => {
+             let stock = skyward_config::DeviceConfig::load(&config)?.stock.with_context(|| format!("{} names no stock build", config.display()))?;
+             println!("version={}\npackage={}\nrecovery={}", stock.version, stock.package, stock.recovery);
+@@ -180,6 +192,7 @@ fn main() -> Result<()> {
+                 None => Ok(()),
+             }
+         }
++        #[cfg(feature = "stock")]
+         Cmd::Described { config, partitions, out } => {
+             let stock = skyward_config::DeviceConfig::load(&config)?.stock.with_context(|| format!("{} names no stock build", config.display()))?;
+             let partitions = if partitions.is_empty() { skyward_programs::phone::PARTITIONS.map(str::to_string).to_vec() } else { partitions };
+@@ -188,6 +201,29 @@ fn main() -> Result<()> {
+     }
+ }
+ 
++
++/// Lay every file under `dir` into `rd`, as the paths it has there: the
++/// libraries a program in the ramdisk needs and the models beside them.
++fn add_extra(rd: &mut Ramdisk, dir: &Path) -> Result<()> {
++    let mut stack = vec![dir.to_path_buf()];
++    while let Some(d) = stack.pop() {
++        for entry in std::fs::read_dir(&d).with_context(|| format!("read {}", d.display()))? {
++            let entry = entry?;
++            let path = entry.path();
++            let name = path.strip_prefix(dir).with_context(|| format!("{} is under {}", path.display(), dir.display()))?;
++            let name = name.to_string_lossy().replace('\\', "/");
++            if entry.file_type()?.is_dir() {
++                stack.push(path);
++                continue;
++            }
++            let data = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
++            let mode = if name.ends_with(".so") || name.ends_with(".txt") || name.ends_with(".ini") { 0o644 } else { 0o755 };
++            rd.add(&name, mode, data)?;
++        }
++    }
++    Ok(())
++}
++
+ /// The partition a recovery is made on, as a full update package names it.
+ const RECOVERY: &str = "recovery";
+ 
+diff --git a/crates/skyward/src/wlan.rs b/crates/skyward/src/wlan.rs
+index a6e13e5..53ee3d7 100644
+--- a/crates/skyward/src/wlan.rs
++++ b/crates/skyward/src/wlan.rs
+@@ -34,6 +34,10 @@ const PARTITIONS: &str = "/skyward/wlan";
+ /// recovery service's own folder.
+ const HOME: &str = "/skyward/run/supplicant";
+ 
++/// The networks this recovery has joined, one file each, so that a phone
++/// that joins one keeps it across a reboot.
++const SAVED: &str = "/metadata/skyward/wifi";
++
+ /// The user the supplicant takes on as it starts, who has to be able to
+ /// make its socket.
+ const WIFI: u32 = 1010;
+@@ -260,9 +264,12 @@ impl Station {
+             Command::Join { ssid, name, security, password } => {
+                 self.unaddress();
+                 let mut joined = Joined { ssid, name, security, stage: Stage::Joining };
+-                if let Err(e) = self.join(&joined, &password) {
+-                    let _ = skyward_sys::kmsg(&format!("joining {} failed: {e:#}", joined.name));
+-                    joined.stage = Stage::Failed;
++                match self.join(&joined, &password) {
++                    Ok(()) => remember(&joined.ssid, joined.security, &password),
++                    Err(e) => {
++                        let _ = skyward_sys::kmsg(&format!("joining {} failed: {e:#}", joined.name));
++                        joined.stage = Stage::Failed;
++                    }
+                 }
+                 self.state.joined = Some(joined);
+             }
+@@ -380,6 +387,10 @@ impl Station {
+                 }
+                 Told::ScanFailed => {}
+                 Told::Terminating => return self.lost(anyhow::anyhow!("wpa_supplicant ended")),
++                // A network kept from an earlier run connects without
++                // anyone joining it: it is shown as joined too, and still
++                // needs an address.
++                Told::Connected if self.state.joined.is_none() => self.joined_saved(),
+                 other => self.joining(&other),
+             }
+         }
+@@ -404,7 +415,9 @@ impl Station {
+         let Some(j) = &mut self.state.joined else { return };
+         match j.on(told) {
+             Next::Show => {}
+-            Next::Address => self.ask_address(),
++            Next::Address => {
++                self.ask_address()
++            }
+             Next::Unaddress => self.unaddress(),
+             Next::Forget => {
+                 if let Some(r) = &self.running
+@@ -416,6 +429,18 @@ impl Station {
+         }
+     }
+ 
++    /// Take up the network the supplicant joined on its own, from the
++    /// settings kept of an earlier run, so that it reads as joined.
++    fn joined_saved(&mut self) {
++        let Some(r) = &self.running else { return };
++        let Ok(status) = r.control.ask("STATUS") else { return };
++        let Some(ssid) = supplicant::fields(&status).get("ssid").and_then(|s| supplicant::unescape(s).ok()) else { return };
++        let security = r.found.iter().find(|b| b.ssid == ssid).map_or(Security::Psk, |b| b.security);
++        let name = String::from_utf8_lossy(&ssid).into_owned();
++        self.state.joined = Some(Joined { ssid, name, security, stage: Stage::Addressing });
++        self.ask_address();
++    }
++
+     /// Ask the network for an address, on a thread of its own.
+     fn ask_address(&mut self) {
+         let interface = self.cfg.interface.clone();
+@@ -662,6 +687,49 @@ fn place(file: &Firmware) -> Result<()> {
+     fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))
+ }
+ 
++/// The networks joined before, as the supplicant's settings write them.
++fn saved_networks() -> String {
++    let mut out = String::new();
++    let Ok(dir) = fs::read_dir(SAVED) else { return out };
++    let mut paths: Vec<_> = dir.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "conf")).collect();
++    paths.sort();
++    for path in paths {
++        if let Ok(block) = fs::read_to_string(&path) {
++            out.push_str(&block);
++            if !block.ends_with('\n') {
++                out.push('\n');
++            }
++        }
++    }
++    out
++}
++
++/// Keep the network just joined for the next run.
++fn remember(ssid: &[u8], security: Security, password: &str) {
++    let Ok(commands) = supplicant::network_commands(0, ssid, security, password, false) else { return };
++    let mut block = String::from("network={\n");
++    for command in commands {
++        let Some(rest) = command.strip_prefix("SET_NETWORK 0 ") else { continue };
++        let Some((name, value)) = rest.split_once(' ') else { continue };
++        block.push('\t');
++        block.push_str(name);
++        block.push('=');
++        block.push_str(value);
++        block.push('\n');
++    }
++    block.push_str("\tpriority=1\n}\n");
++    let name: String = ssid.iter().map(|b| format!("{b:02x}")).collect();
++    let write = |dir: &Path| -> std::io::Result<()> {
++        fs::create_dir_all(dir)?;
++        fs::write(dir.join(format!("{name}.conf")), &block)
++    };
++    let dir = Path::new(SAVED);
++    if write(dir).is_err() {
++        let _ = std::process::Command::new("mount").args(["-o", "rw,remount", "/metadata"]).status();
++        let _ = write(dir);
++    }
++}
++
+ /// Start the supplicant on the interface, and wait for its control socket.
+ fn start_supplicant(cfg: &Config, libraries: Option<&Path>) -> Result<Child> {
+     let home = Path::new(HOME);
+@@ -671,8 +739,9 @@ fn start_supplicant(cfg: &Config, libraries: Option<&Path>) -> Result<Child> {
+     std::os::unix::fs::chown(&sockets, Some(WIFI), Some(WIFI)).with_context(|| format!("give {} to the supplicant", sockets.display()))?;
+     fs::set_permissions(&sockets, fs::Permissions::from_mode(0o770)).with_context(|| format!("keep {} to the supplicant", sockets.display()))?;
+     let settings = home.join("wpa_supplicant.conf");
+-    fs::write(&settings, format!("ctrl_interface={}\nupdate_config=0\np2p_disabled=1\npmf=1\nsae_pwe=2\n", sockets.display()))
+-        .with_context(|| format!("write {}", settings.display()))?;
++    let mut fresh = format!("ctrl_interface={}\nupdate_config=1\np2p_disabled=1\npmf=1\nsae_pwe=2\n", sockets.display());
++    fresh.push_str(&saved_networks());
++    fs::write(&settings, fresh).with_context(|| format!("write {}", settings.display()))?;
+     fs::set_permissions(&settings, fs::Permissions::from_mode(0o644)).with_context(|| format!("open {} to the supplicant", settings.display()))?;
+     let socket = sockets.join(&cfg.interface);
+     // One an earlier run left would answer nothing.

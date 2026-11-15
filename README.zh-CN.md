@@ -80,7 +80,7 @@ Android NDK r29、`lz4`。
 
 ```bash
 git clone https://github.com/kirklin/skyward.git repos/skyward
-cd repos/skyward && git apply ../../patches/0001-windows-host-build.patch && cd ../..
+cd repos/skyward && git apply ../../patches/0001-vermeer-port.patch && cd ../..
 
 # 需要一份同版本的原厂 recovery 分区镜像作为底板：
 #   adb exec-out dd if=/dev/block/by-name/recovery_a of=out/stock-recovery.img
@@ -98,7 +98,7 @@ export STOCK=./out/stock-recovery.img
 | 路径 | 说明 |
 |---|---|
 | `devices/vermeer.toml` | 设备配置：显示、触控节点、服务、WLAN、owners |
-| `patches/0001-windows-host-build.patch` | ramdisk 代码的 `cfg(unix)`、POSIX 绝对路径判定、`skyward-pack --extra` |
+| `patches/0001-vermeer-port.patch` | 本移植相对于上游的全部改动：`cfg(unix)` 保护、POSIX 绝对路径判定、`skyward-pack --extra`、发布列表/镜像/`latest.txt` 更新链路，以及本移植的 Wi-Fi 配置保存 |
 | `src/thpstart.c` | shim：`dlopen("/odm/lib64/libtouchreport.so")` 并调用 `thp_daemon_main` |
 | `scripts/build.sh` | 编译 skyward + system-init，并打包 recovery 镜像 |
 | `scripts/make-extra.sh` | 用 NDK 编译 `thpstart` 到 `--extra` 覆盖层 |

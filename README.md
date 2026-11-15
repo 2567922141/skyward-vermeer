@@ -81,7 +81,7 @@ NDK r29, `lz4`.
 
 ```bash
 git clone https://github.com/kirklin/skyward.git repos/skyward
-cd repos/skyward && git apply ../../patches/0001-windows-host-build.patch && cd ../..
+cd repos/skyward && git apply ../../patches/0001-vermeer-port.patch && cd ../..
 
 # a stock recovery image of the same build is the base:
 #   adb exec-out dd if=/dev/block/by-name/recovery_a of=out/stock-recovery.img
@@ -99,7 +99,7 @@ export STOCK=./out/stock-recovery.img
 | Path | What |
 |---|---|
 | `devices/vermeer.toml` | device config (display, touch nodes, services, WLAN, owners) |
-| `patches/0001-windows-host-build.patch` | `cfg(unix)` for the ramdisk code, POSIX-absolute path checks, `skyward-pack --extra` |
+| `patches/0001-vermeer-port.patch` | the whole vermeer port on top of upstream: `cfg(unix)` guards, POSIX-absolute path checks, `skyward-pack --extra`, the release-list/mirror/`latest.txt` updater, and the Wi-Fi settings this port keeps |
 | `src/thpstart.c` | shim that dlopens `/odm/lib64/libtouchreport.so` and runs `thp_daemon_main` |
 | `scripts/build.sh` | build skyward + system-init and pack a recovery image |
 | `scripts/make-extra.sh` | compile `thpstart` into the `--extra` overlay |

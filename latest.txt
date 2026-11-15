@@ -1,5 +1,5 @@
-version=0.3.1-vermeer-beta0.0.9
-name=Skyward0.3.1-vermeer-beta0.0.9.zip
-sha256=c6c3cc5d2e5ebfb578695ba8049a526573df1bf8ba5ea424b7be03cedd48053a
-size=45884507
-link=https://github.com/2567922141/skyward-vermeer/releases/download/0.3.1-vermeer-beta0.0.9/Skyward0.3.1-vermeer-beta0.0.9.zip
+version=0.3.1-vermeer-beta0.0.10
+name=Skyward0.3.1-vermeer-beta0.0.10.zip
+sha256=dd0e905a21821ddbad9f7e75d8920c9344d90feced618f13ffbd4a245ca443fd
+size=45884624
+link=https://github.com/2567922141/skyward-vermeer/releases/download/0.3.1-vermeer-beta0.0.10/Skyward0.3.1-vermeer-beta0.0.10.zip
