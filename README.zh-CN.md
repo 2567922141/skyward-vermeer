@@ -39,7 +39,7 @@ Windows 宿主编译补丁，以及让触控可用的 THP 守护 shim。
 | 备份（`boot` 组 = boot/init_boot/vendor_boot/dtbo/vbmeta/vbmeta_system/recovery，7 个 lz4 文件，sha256 与 `backup.toml` 全等） | ✅ |
 | 恢复（上述 7 个分区原样写回，sha256 全等；`recovery_b` 不动） | ✅ |
 | 回滚原厂 recovery 再刷回（数据无损） | ✅ |
-| WLAN 连接；0.0.7 起密码写入 `/metadata/skyward/wifi/`，重启自动重连 | ✅ |
+| WLAN 连接；0.0.7 起密码写入 `/metadata/skyward/wifi/`，0.0.9 起开机自动连接并获取地址（实测重启后 wlan0 直接拿到 192.168.0.111，无需重输密码） | ✅ |
 | 在线更新（检测预发行、镜像下载、写入 recovery 槽位，重启后版本生效） | ✅ |
 
 尚未测试，风险自负：格式化 `/data`、清缓存、`adb sideload`、A/B 槽位切换、双系统
