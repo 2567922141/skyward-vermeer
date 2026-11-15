@@ -27,16 +27,25 @@ this repository only contains the `vermeer` port.
 
 ## Status
 
-Working on a real device (OS3.0.307.0.WNKCNXM):
+Verified by hand on a real device (OS3.0.307.0.WNKCNXM):
 
-- boots as recovery; ADB root, MTP, brightness, hardware keys
-- **touch works after reboot**: `thpstart` is built into the ramdisk and started as a service
-- **/data decryption works** with the stock keymint services
-- installs zips (script zips; signature check can be turned off), backup/restore, rollback to
-  stock recovery and back
+| Feature | Result |
+| --- | --- |
+| Boots into Skyward | ✅ |
+| Touch (built-in `thpstart`, works after reboot), hardware keys, brightness | ✅ |
+| `/data` decryption (FBE) | ✅ |
+| ADB root without authorization; push/pull keeps the same sha256 | ✅ |
+| MTP | ✅ |
+| Script zip install (runs as `api=3`, log in `/skyward/run/install-script.log`, exit status 0) | ✅ |
+| Backup (`boot` group = boot/init_boot/vendor_boot/dtbo/vbmeta/vbmeta_system/recovery; 7 lz4 files whose sha256 match `backup.toml`) | ✅ |
+| Restore (the same 7 partitions written back, sha256 unchanged; `recovery_b` untouched) | ✅ |
+| Roll back to stock recovery and flash back (no data loss) | ✅ |
+| WLAN; since 0.0.7 the password is kept in `/metadata/skyward/wifi/` and reused after a reboot | ✅ |
+| Online update (finds the prerelease, downloads through a mirror, writes the recovery slots, version changes after reboot) | ✅ |
 
-Not done: WLAN, MTP toggling, OTA self-heal, second-system packages (Skyward supports them, but
-no package exists for vermeer).
+Not tested — at your own risk: formatting `/data`, clearing caches, `adb sideload`, A/B slot
+switching, second systems (Skyward supports them, but no vermeer package exists), and the
+system-OTA check/install path.
 
 ## Before you flash
 

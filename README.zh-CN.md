@@ -26,15 +26,24 @@ Windows 宿主编译补丁，以及让触控可用的 THP 守护 shim。
 
 ## 当前状态
 
-已在真机（OS3.0.307.0.WNKCNXM）验证：
+真机（OS3.0.307.0.WNKCNXM）已测通过：
 
-- 可作为 recovery 启动；ADB 免授权 root、MTP、亮度调节、硬件按键均正常
-- **重启后触控仍然可用**：`thpstart` 已内置进 ramdisk，并注册为服务随启动运行
-- **/data 解密正常**：依赖原厂 keymint 服务链（qseecomd、keymint、gatekeeper、boot 等）
-- 可安装 zip（脚本包；签名校验可关闭）、备份/恢复、回滚原厂 recovery 后再刷回
+| 功能 | 结果 |
+| --- | --- |
+| 启动进入 Skyward | ✅ |
+| 触控（内置 `thpstart`，重启后仍可用）、硬件按键、亮度 | ✅ |
+| `/data` 解密（FBE） | ✅ |
+| ADB 免授权 root；push/pull 后 sha256 一致 | ✅ |
+| MTP | ✅ |
+| 安装脚本 zip（脚本以 `api=3` 运行，日志 `/skyward/run/install-script.log`，退出码 0） | ✅ |
+| 备份（`boot` 组 = boot/init_boot/vendor_boot/dtbo/vbmeta/vbmeta_system/recovery，7 个 lz4 文件，sha256 与 `backup.toml` 全等） | ✅ |
+| 恢复（上述 7 个分区原样写回，sha256 全等；`recovery_b` 不动） | ✅ |
+| 回滚原厂 recovery 再刷回（数据无损） | ✅ |
+| WLAN 连接；0.0.7 起密码写入 `/metadata/skyward/wifi/`，重启自动重连 | ✅ |
+| 在线更新（检测预发行、镜像下载、写入 recovery 槽位，重启后版本生效） | ✅ |
 
-尚未完成：WLAN、MTP 开关、系统 OTA 自愈、第二系统（Skyward 支持该功能，但 vermeer
-目前没有对应的系统包）。
+尚未测试，风险自负：格式化 `/data`、清缓存、`adb sideload`、A/B 槽位切换、双系统
+（Skyward 支持，但 vermeer 没有对应系统包）、系统 OTA 在线检测/安装。
 
 ## 刷机前必读
 
